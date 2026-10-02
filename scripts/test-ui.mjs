@@ -5,8 +5,9 @@ import { mkdtemp, readFile, writeFile, mkdir, rm, access } from 'node:fs/promise
 import { join, resolve, sep } from 'node:path';
 import { chromium } from 'playwright';
 import { settingsHarness } from '../tests/settings-harness.ts';
-import { FixtureAdapter, textResponse } from '../tests/harness.ts';
 import { SessionId } from '@deepseek-ai/dsh-session';
+import { buildModelCatalog } from '@deepseek-ai/dsh-api-session-controller';
+import { CatalogAdapter } from '../tests/catalog-adapter.ts';
 
 await mkdir('.test-output', { recursive: true });
 const temp = await mkdtemp(join('.test-output', 'ui-'));
@@ -15,7 +16,13 @@ const regressionClient = regressionIndex === -1 ? undefined : process.argv[regre
 if (regressionIndex !== -1 && !regressionClient) throw new Error('Supply a client bundle after --regression-client.');
 let browser, server, host;
 try {
-  host = await settingsHarness(new FixtureAdapter(() => textResponse('fixture')));
+  const catalogAdapter = new CatalogAdapter();
+  host = await settingsHarness(catalogAdapter);
+  host.ctx.llm.registerAdapter(['external'], catalogAdapter);
+  const advertised = await buildModelCatalog(host.ctx, { provider: 'fixture', model: 'capable' });
+  assert.deepEqual(advertised.failures, []);
+  assert.equal(advertised.groups.flatMap(group => group.models).length, 6);
+  let catalogOffline = false;
   let parent = await host.createParent(), refuseNext = false;
   const hostState = () => {
     const descriptor = host.ctx.settings.describe().find(item => item.ns === 'dsh-agent-router');
@@ -30,6 +37,10 @@ try {
   await writeFile(join(temp, 'conversation.js'), nativeSource.replace(marker,
     'exports.__fixtureInputBar = InputBar; exports.__fixtureLocales = {zh, en}; exports.__fixtureCSS = InputBar_module_css_default;' + marker));
   await writeFile(join(temp, 'plugin.js'), await readFile(regressionClient ?? 'lib/client.js'));
+  const modelSource = await readFile('node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js', 'utf8');
+  const modelMarker = 'exports.ModelDirectory = ModelDirectory;';
+  assert.equal(modelSource.split(modelMarker).length, 2);
+  await writeFile(join(temp, 'models.js'), modelSource.replace(modelMarker, 'exports.__fixtureModelSelect = ModelSelect; exports.__fixtureLocales = {zh, en};' + modelMarker));
   const tokens = `
     :root {--dsw-alias-label-primary:#26313d;--dsw-alias-label-secondary:#657382;--dsw-alias-label-tertiary:#a1acb8;--dsw-alias-bg-layer-1:#fff;--dsw-alias-border-l3:#dce2e8;--dsw-alias-interactive-bg-hover:#f3f6f9;--dsw-static-blue-450:#4385d1;--dsw-static-green-500:#2b9460;--dsw-static-red-500:#df5454;--dsw-radius-md:8px;background:#fff;color:#26313d}
     :root[data-theme=dark]{--dsw-alias-label-primary:#e1e7ee;--dsw-alias-label-secondary:#a4afbd;--dsw-alias-label-tertiary:#697482;--dsw-alias-bg-layer-1:#222832;--dsw-alias-border-l3:#414c5a;--dsw-alias-interactive-bg-hover:#2b3441;background:#1c222b;color:#e1e7ee}
@@ -41,7 +52,7 @@ try {
   `;
   await writeFile(join(temp, 'index.html'), `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><style>${tokens}</style></head><body><header>Agent 调用图</header><main id="root"></main><script src="/app.js"></script></body></html>`);
   server = createServer(async (request, response) => {
-    if (['/prefs', '/catalog', '/chat', '/reject', '/restart'].includes(request.url)) {
+    if (['/prefs', '/catalog', '/catalog-mode', '/chat', '/reject', '/restart'].includes(request.url)) {
       response.setHeader('Content-Type', 'application/json');
       try {
         if (request.url === '/prefs' && request.method === 'POST') {
@@ -52,16 +63,20 @@ try {
           response.end(JSON.stringify({ accepted, ...hostState() })); return;
         }
         if (request.url === '/catalog') {
-          response.end(JSON.stringify({ default: { provider: 'fixture', model: 'capable' }, routableProviders: ['fixture'], failures: [],
-            groups: [{ id: 'fixture', name: 'Fixture provider', models: [{ id: 'capable', name: 'Capable Model' }, { id: 'economy', name: 'Economy Model' }, { id: 'judge', name: 'Review Model' }] }] })); return;
+          if (catalogOffline) { response.statusCode = 503; response.end(JSON.stringify({ code: 'connection/offline', message: 'Fixture offline' })); return; }
+          response.end(JSON.stringify(await buildModelCatalog(host.ctx, { provider: 'fixture', model: 'capable' }))); return;
+        }
+        if (request.url === '/catalog-mode') {
+          let mode = ''; for await (const chunk of request) mode += chunk;
+          catalogOffline = mode === 'offline'; catalogAdapter.extra = mode === 'extra'; catalogAdapter.failExternal = mode === 'partial';
         }
         if (request.url === '/chat') parent = await host.createParent();
         if (request.url === '/reject') refuseNext = true;
-        if (request.url === '/restart') { const id = parent.id; await host.restart(); parent = await host.createParent(SessionId(id)); }
+        if (request.url === '/restart') { const id = parent.id; await host.restart(); host.ctx.llm.registerAdapter(['external'], catalogAdapter); parent = await host.createParent(SessionId(id)); }
         response.end(JSON.stringify(hostState())); return;
       } catch { response.statusCode = 500; response.end(JSON.stringify({ error: 'Fixture Host failed' })); return; }
     }
-    const file = ['/app.js', '/app.css', '/conversation.js', '/plugin.js'].includes(request.url) ? request.url.slice(1) : 'index.html';
+    const file = ['/app.js', '/app.css', '/conversation.js', '/models.js', '/plugin.js'].includes(request.url) ? request.url.slice(1) : 'index.html';
     try { response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html; charset=utf-8'); response.end(await readFile(join(temp, file))); }
     catch { response.statusCode = 500; response.end('Fixture could not load'); }
   });
@@ -159,9 +174,41 @@ try {
     await assertComposerLayout(page);
     assert.equal(await page.getByRole('combobox').count(), 0);
     await page.locator('.fixture-conversation > div').screenshot({ path: `docs/composer-off-${theme}.png` });
+    const nativeTrigger = page.locator('.fixture-model button[aria-haspopup="menu"]');
+    await nativeTrigger.click();
+    await page.getByRole('menuitem').filter({ hasText: '模型' }).first().click();
+    const nativeModels = page.getByRole('menu', { name: '模型', exact: true });
+    await nativeModels.getByRole('menuitemradio', { name: 'External Flash', exact: true }).waitFor();
+    const nativeNames = (await nativeModels.getByRole('menuitemradio').allTextContents()).map(text => text.trim());
+    assert.equal(nativeNames.length, 6);
+    assert.equal(await nativeModels.getByText('Fixture provider', { exact: true }).count(), 1);
+    assert.equal(await nativeModels.getByText('External API', { exact: true }).count(), 1);
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+    assert.equal(await nativeTrigger.getAttribute('aria-expanded'), 'false');
+    const calls = await page.evaluate(() => window.fixtureCatalogCalls());
     await toggle.click();
-    const main = page.getByRole('combobox', { name: '主模型' }), worker = page.getByRole('combobox', { name: '子模型' });
-    await worker.selectOption(JSON.stringify(['fixture', 'economy']));
+    const main = page.getByRole('button', { name: '主模型', exact: true }), worker = page.getByRole('button', { name: '子模型', exact: true });
+    const choose = async (label, name) => {
+      await page.getByRole('button', { name: label, exact: true }).click();
+      await page.getByRole('menuitemradio', { name, exact: true }).click();
+    };
+    await worker.click();
+    const workerMenu = page.getByRole('menu', { name: '子模型', exact: true });
+    assert.deepEqual((await workerMenu.getByRole('menuitemradio').allTextContents()).map(text => text.trim()), nativeNames,
+      'Plugin and original right-side picker must show the same native catalog.');
+    assert.equal(await workerMenu.getByText('Fixture provider', { exact: true }).count(), 1);
+    assert.equal(await workerMenu.getByText('External API', { exact: true }).count(), 1);
+    assert.equal(await page.evaluate(() => window.fixtureCatalogCalls()), calls, 'The plugin must reuse the native catalog cache.');
+    await assertPopoverFits(page);
+    await page.locator('.dar-model-popover').screenshot({ path: `docs/model-list-${theme}.png` });
+    const search = page.getByRole('searchbox', { name: '搜索模型', exact: true });
+    await search.fill('flash');
+    assert.equal(await workerMenu.getByRole('menuitemradio').count(), 1);
+    await page.keyboard.press('Enter');
+    assert.match(await worker.innerText(), /External Flash/);
+    await choose('主模型', 'External Capable');
+    assert.match(await main.innerText(), /External Capable/);
+    await choose('主模型', 'Capable Model');
     await page.evaluate(() => window.fixtureRejectNext());
     await page.getByRole('button', { name: '启用', exact: true }).click();
     await page.getByRole('alert').waitFor();
@@ -174,35 +221,62 @@ try {
     const chooser = page.getByRole('button', { name: '选择模型', exact: true });
     await page.locator('.fixture-conversation > div').screenshot({ path: `docs/composer-${theme}.png` });
     await chooser.click(); await assertPopoverFits(page);
-    assert.equal(await main.inputValue(), JSON.stringify(['fixture', 'capable']));
+    assert.match(await main.innerText(), /Capable Model/);
+    const externalBinding = hostState().state.value.chatBindings.find(item => item.sessionId === parent.id);
+    const externalWorker = hostState().state.value.models.find(item => item.id === externalBinding.workerModelId);
+    assert.equal(externalWorker.provider, 'external'); assert.equal(externalWorker.model, 'flash');
+    assert.equal(externalWorker.inputPrice, -1, 'New catalog routes must not invent a price.');
+    await choose('子模型', 'Economy Model');
+    await page.waitForFunction(() => !document.querySelector('[role=switch]')?.disabled && document.querySelector('[aria-label="子模型"]')?.textContent.includes('Economy Model'));
     assert.equal(hostState().state.value.chatBindings.find(item => item.sessionId === parent.id)?.workerModelId, 'economy');
     const panelBox = await page.locator('.dar-model-popover').boundingBox(), composerBox = await page.locator('.fixture-conversation > div').boundingBox();
     const top = Math.min(panelBox.y, composerBox.y) - 8;
     await page.screenshot({ path: `docs/model-picker-${theme}.png`, clip: { x: 0, y: top, width, height: composerBox.y + composerBox.height - top + 8 } });
     await page.evaluate(() => window.fixtureRejectNext());
-    await main.selectOption(JSON.stringify(['fixture', 'judge']));
+    await choose('主模型', 'Review Model');
     await page.getByRole('alert').waitFor();
-    assert.equal(await main.inputValue(), JSON.stringify(['fixture', 'capable']));
+    assert.match(await main.innerText(), /Capable Model/);
     assert.equal(await toggle.getAttribute('aria-checked'), 'true');
-    await main.selectOption(JSON.stringify(['fixture', 'judge']));
-    await page.waitForFunction(value => !document.querySelector('[role=switch]')?.disabled && document.querySelector('[aria-label="主模型"]')?.value === value && !document.querySelector('[role=alert]'), JSON.stringify(['fixture', 'judge']));
+    await choose('主模型', 'Review Model');
+    await page.waitForFunction(() => !document.querySelector('[role=switch]')?.disabled && document.querySelector('[aria-label="主模型"]')?.textContent.includes('Review Model') && !document.querySelector('[role=alert]'));
     assert.equal(hostState().state.value.lastMainModelId, 'judge');
+    await worker.click();
+    await page.evaluate(() => window.fixtureCatalogMode('extra'));
+    await workerMenu.getByRole('menuitemradio', { name: 'Newly Added Model', exact: true }).waitFor();
+    await search.fill('no-such-model');
+    await page.getByRole('status').filter({ hasText: '没有匹配的模型' }).waitFor();
+    assert.equal(await workerMenu.getByRole('menuitemradio').count(), 0);
+    await search.fill('');
+    await page.evaluate(() => window.fixtureCatalogMode('partial'));
+    await page.getByRole('status').filter({ hasText: '部分供应商未能读取' }).waitFor();
+    assert.equal(await workerMenu.getByRole('menuitemradio', { name: 'Economy Model', exact: true }).count(), 1);
+    await page.evaluate(() => window.fixtureCatalogMode('offline'));
+    await page.getByRole('status').filter({ hasText: '模型目录未能读取' }).waitFor();
+    assert.equal(await workerMenu.getByRole('menuitemradio', { name: 'Economy Model', exact: true }).count(), 1,
+      'A connection failure must retain the last good catalog.');
+    await page.evaluate(() => fetch('/catalog-mode', { method: 'POST', body: 'normal' }));
+    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await workerMenu.getByRole('menuitemradio', { name: 'External Capable', exact: true }).waitFor();
+    await page.getByRole('status').filter({ hasText: '模型目录未能读取' }).waitFor({ state: 'detached' });
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('dialog').count(), 1, 'Escape in the model list returns to the pair.');
+    assert.match(await main.innerText(), /Review Model/); assert.match(await worker.innerText(), /Economy Model/);
     await page.evaluate(() => window.fixtureNewChat());
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false');
     assert.equal(await page.getByRole('combobox').count(), 0);
     await toggle.click();
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true');
     await chooser.click();
-    assert.equal(await main.inputValue(), JSON.stringify(['fixture', 'judge']));
-    assert.equal(await worker.inputValue(), JSON.stringify(['fixture', 'economy']));
+    assert.match(await main.innerText(), /Review Model/);
+    assert.match(await worker.innerText(), /Economy Model/);
     await toggle.click();
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false');
     await page.evaluate(() => window.fixtureRestart());
     await toggle.click();
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true');
     await chooser.click();
-    assert.equal(await main.inputValue(), JSON.stringify(['fixture', 'judge']));
-    assert.equal(await worker.inputValue(), JSON.stringify(['fixture', 'economy']));
+    assert.match(await main.innerText(), /Review Model/);
+    assert.match(await worker.innerText(), /Economy Model/);
     await assertPopoverFits(page);
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog').count(), 0);
@@ -213,7 +287,9 @@ try {
     for (const responsiveWidth of [916, 520, 320]) {
       await page.setViewportSize({ width: responsiveWidth, height: 650 });
       await assertComposerLayout(page);
-      await chooser.click(); await assertPopoverFits(page); await page.keyboard.press('Escape');
+      await chooser.click(); await assertPopoverFits(page);
+      await worker.click(); await assertPopoverFits(page);
+      await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
     }
     await page.evaluate(() => window.fixtureShowSettings());
     await page.getByText('价格与输出限制', { exact: true }).first().click();
@@ -222,9 +298,9 @@ try {
     await page.getByRole('button', { name: '保存', exact: true }).click();
     await page.getByRole('status').filter({ hasText: '已保存' }).waitFor();
     assert.equal(hostState().state.value.models[0].inputPrice, inputPrice);
-    assert.deepEqual(errors, []); await page.close();
+    assert.deepEqual(errors, []); await page.evaluate(() => window.fixtureDisposeClient()); await page.close();
   }
-  if (!regressionClient) console.log('UI: published DSH composer and shipping plugin, toolbar/statistics separation at 916/520/320px, light/dark, portaled model picker margins, Escape/outside dismissal, default-off, Host refusal/acceptance, remembered pairs after restart and native settings saves passed.');
+  if (!regressionClient) console.log('UI: real Cordis services, native catalog builder, original DSH composer/picker and shipping plugin; shared provider groups/cache, search/keyboard, config refresh, partial failures/retry, default-off, Host refusal/acceptance, remembered pairs after restart, settings saves and 916/520/320px light/dark layouts passed.');
 } finally {
   await browser?.close();
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

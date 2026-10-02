@@ -10,25 +10,24 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
-import type {} from '@deepseek-ai/dsh-api-remotes/client';
-import type {} from '@deepseek-ai/dsh-api-session-controller/remote';
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client';
 import { IconChevronRightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives';
 import { viewSchema, type AgentView } from '../contracts.ts';
 import { Graph } from './Graph.tsx';
 import { ChatControls } from './ChatControls.tsx';
 import { SettingsPage } from './SettingsPage.tsx';
-import type { SettingsForm, LoadCatalog } from './preferences.ts';
+import type { SettingsForm, ModelDirectoryHandle } from './preferences.ts';
 import { en, zh, NS } from './locales.ts';
 import css from './style.css';
-export const inject = ['sessions', 'slots', 'locale', 'sidebarRightTabs', 'configForms', 'remote.session'];
+export const inject = ['sessions', 'slots', 'locale', 'sidebarRightTabs', 'configForms', 'modelDirectories'];
 const ID = 'dsh-agent-router';
 type BodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & { sessions: ISessions };
-type ControlsProps = PropsRuntime<'conversation.input.left'> & PropsLocale<typeof NS> & { settingsForm: SettingsForm; loadCatalog: LoadCatalog };
-function Controls({ sessionId, useSession, useProjection, settingsForm, loadCatalog, t }: ControlsProps) {
+type ControlsProps = PropsRuntime<'conversation.input.left'> & PropsLocale<typeof NS> & { settingsForm: SettingsForm; directory: ModelDirectoryHandle };
+function Controls({ sessionId, useSession, useProjection, settingsForm, directory, t }: ControlsProps) {
   const selection = useProjection('modelSelection');
   const unavailable = useSession(session => !!session.subagent || session.removed);
   if (unavailable) return null;
-  return <ChatControls key={sessionId} sessionId={sessionId} form={settingsForm} loadCatalog={loadCatalog} current={selection?.next} t={t} />;
+  return <ChatControls key={sessionId} sessionId={sessionId} form={settingsForm} directory={directory} current={selection?.next} t={t} />;
 }
 function Page({ view, settingsForm, t }: PropsRuntime<'plugins.bundle.config'> & PropsLocale<typeof NS> & { settingsForm: SettingsForm }) {
   return view === 'summary' ? <span>{t('configSummary')}</span> : <SettingsPage form={settingsForm} t={t} />;
@@ -84,14 +83,9 @@ export function apply(ctx: Context): void {
     name: 'sidebar.right.pane.tab', key: ID, locale: NS, inject: () => ({ sessions: ctx.sessions }),
   }, Body));
   const settingsForm = ctx.configForms.get<import('../settings-schema.ts').Settings>(ID);
-  const loadCatalog: LoadCatalog = async () => {
-    const result = await ctx.remote.session.modelCatalog();
-    if (!result.ok) throw new Error('The model catalog could not be loaded.');
-    return result.value;
-  };
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
     name: 'conversation.input.left', id: ID, locale: NS, order: 35, registrant: ID,
-    inject: () => ({ settingsForm, loadCatalog }),
+    inject: (sessionId) => ({ settingsForm, directory: ctx.modelDirectories.directoryFor(sessionId) }),
   }, Controls));
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config', key: ID, locale: NS, inject: () => ({ settingsForm }),

@@ -19,6 +19,9 @@ test('DSH parses the installable bundle patch and activates a single plugin row'
 });
 
 test('built client registers a lazy factory with the desktop ModuleLoader', async () => {
+  const manifest = JSON.parse(await readFile('package.json', 'utf8'));
+  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-model-selection'),
+    'ModuleLoader must activate the native directory provider before this plugin.');
   const source = await readFile('lib/client.js', 'utf8');
   let registration: { id: string; factory: (require: (id: string) => object) => { apply: unknown; inject: string[] } } | undefined;
   runInNewContext(source, { window: { __ModuleLoader__: { load: (value: typeof registration) => { registration = value; } } } });
@@ -26,7 +29,7 @@ test('built client registers a lazy factory with the desktop ModuleLoader', asyn
   const ids: string[] = [];
   const client = registration!.factory(id => { ids.push(id); return {}; });
   assert.equal(typeof client.apply, 'function');
-  assert.deepEqual(Array.from(client.inject), ['sessions', 'slots', 'locale', 'sidebarRightTabs', 'configForms', 'remote.session']);
+  assert.deepEqual(Array.from(client.inject), ['sessions', 'slots', 'locale', 'sidebarRightTabs', 'configForms', 'modelDirectories']);
   assert.deepEqual(new Set(ids), new Set(['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives']));
 });
 

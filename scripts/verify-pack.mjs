@@ -13,7 +13,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import SubagentRuntime from '@deepseek-ai/dsh-subagent';
 
-const archive = resolve(process.argv[2] ?? 'artifacts/dsh-agent-router-0.2.1.tgz');
+const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+const archive = resolve(process.argv[2] ?? `artifacts/dsh-agent-router-${version}.tgz`);
 await mkdir('.test-output', { recursive: true });
 const directory = await mkdtemp(resolve('.test-output', 'package-'));
 const ctx = new Context();

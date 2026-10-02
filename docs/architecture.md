@@ -10,7 +10,7 @@ Both surfaces use the shared `configForms` service for the `dsh-agent-router` pr
 
 An absent chat binding means off. Newly created and forked chats have no binding even when preferences exist. Explicitly enabled chats keep their binding across reopening/restart. Disabling removes only that chat's binding, retaining the last pair. Changing choices affects subsequent root requests and new delegations; a running delegation holds its snapshot. The native conversation model can retain its last actual route after disabling.
 
-The model catalog comes from `remote.session.modelCatalog`; explicitly configured routes remain available when the catalog is incomplete. Credentials stay in DSH's provider configuration. Selected new routes have unknown prices until edited. Without custom roles, a virtual `worker` role supplies the selected worker and optional main-model fallback. With custom roles, the worker selection overrides initial routes while preserving individual verifier, fallback and tool restrictions.
+The client declares the native `modelDirectories` service and resolves `directoryFor(sessionId)`, the same shared directory used by DSH's original composer picker and `/model` command. Its observable store and loader own catalog caching, session defaults, configuration/credential updates and connection resets. Provider-grouped menus use native `MenuGroup`, `Input` and `rankByName`; the plugin does not maintain another remote catalog request or cache. Explicitly configured routes remain available when the catalog is incomplete, and a query failure retains the last loaded models with a Retry action. Credentials stay in DSH's provider configuration. Selected new routes have unknown prices until edited. Without custom roles, a virtual `worker` role supplies the selected worker and optional main-model fallback. With custom roles, the worker selection overrides initial routes while preserving individual verifier, fallback and tool restrictions.
 
 ## Execution
 
@@ -50,8 +50,8 @@ Reservations belong to the current Host plugin instance. Historical conversation
 
 ## Compatibility and packaging
 
-Version 0.2.0 targets DSH 0.2.0-rc.2. It uses published packages, a normal `dsh.bundle.patch` insert and a `./client` lazy CommonJS factory registered with DSH's ModuleLoader. The Host is ESM. Both built halves are shipped for GitHub and tarball installation.
+Version 0.2.2 targets DSH 0.2.0-rc.2. It uses published packages, a normal `dsh.bundle.patch` insert and a `./client` lazy CommonJS factory registered with DSH's ModuleLoader. The Host is ESM. Both built halves are shipped for GitHub and tarball installation.
 
 The desktop client uses native IPC-compatible session objects; no custom HTTP endpoint, separate browser window or app binary patch is needed. The graph follows the existing theme tokens and locale service.
 
-Keyless tests run native DSH infrastructure with a scripted LLM boundary. Component screenshots and browser tests verify the shipped graph component. Paid providers and installation into a user's live profile require additional real-environment validation; the release does not claim those have been exercised.
+Keyless tests run native DSH infrastructure with a scripted LLM boundary. Client services are supplied by sibling Cordis plugins so dependency enforcement matches the desktop. Browser tests load the published composer, original model picker, native directory resolver and shipping plugin, with the real Host catalog builder over fixture adapters. They compare both model lists, exercise shared refresh/retry behavior and verify responsive controls and the graph. Paid providers and installation into a user's live profile require additional real-environment validation; the release does not claim those have been exercised.

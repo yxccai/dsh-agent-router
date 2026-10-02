@@ -47,7 +47,20 @@
 .dar-model-popover .dar-popover-close { width: 24px; height: 24px; padding: 0; color: var(--dsw-alias-label-secondary); }
 .dar-pair { display: grid; gap: 12px; }
 .dar-picker { display: grid; gap: 5px; min-width: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
-.dar-picker select { width: 100%; min-width: 0; height: 34px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md, 6px); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: 400 13px / 20px var(--dsw-font-family, system-ui, sans-serif); padding: 4px 8px; }
+.dar-model-popover .dar-picker-trigger { width: 100%; min-width: 0; height: 34px; display: flex; justify-content: space-between; gap: 8px; color: var(--dsw-alias-label-primary); font: 400 13px / 20px var(--dsw-font-family, system-ui, sans-serif); padding: 4px 8px; }
+.dar-picker-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dar-picker-trigger > svg { flex: none; }
+.dar-model-popover .dar-model-search { display: flex; width: 100%; box-sizing: border-box; border-color: var(--dsw-alias-border-l3); margin-bottom: 6px; }
+.dar-model-popover .dar-model-search:focus-within { border-color: var(--dsw-alias-button-info-fill); }
+.dar-model-search input { font: inherit; }
+.dar-model-search input:focus-visible { outline: none; }
+.dar-model-search input::placeholder { color: var(--dsw-alias-label-secondary); }
+.dar-model-groups { max-height: min(280px, calc(100dvh - 180px)); overflow: auto; }
+.dar-model-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; min-height: 32px; padding: 6px 8px; border: 0; border-radius: var(--dsw-radius-sm); color: var(--dsw-alias-label-primary); background: transparent; font: 400 13px / 20px var(--dsw-font-family, system-ui, sans-serif); text-align: left; cursor: pointer; }
+.dar-model-option > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dar-model-option:hover:not(:disabled), .dar-model-option[aria-checked=true], .dar-model-option[data-highlighted=true] { background: var(--dsw-alias-interactive-bg-hover); }
+.dar-model-option:disabled { opacity: .5; cursor: default; }
+.dar-model-check { display: inline-flex; align-items: center; flex: none; width: 14px; }
 .dar-model-popover .dar-enable { width: 100%; margin-top: 12px; }
 .dar-action { border: 1px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md, 6px); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 5px 12px; cursor: pointer; }
 .dar-link { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; padding: 4px; cursor: pointer; }
@@ -64,5 +77,5 @@
 .dar-full-field { grid-column: 1 / -1; }
 .dar-settings details > summary { color: var(--dsw-alias-label-secondary); font-size: 12px; padding: 6px 0; cursor: pointer; }
 .dar-settings-section { border-top: 1px solid var(--dsw-alias-border-l3); padding: 6px 0; }
-.dar-model-popover select:disabled, .dar-settings button:disabled { opacity: .5; cursor: default; }
+.dar-settings button:disabled { opacity: .5; cursor: default; }
 .dar-controls :focus-visible, .dar-model-popover :focus-visible, .dar-settings :focus-visible { outline: 2px solid var(--dsw-static-blue-450); outline-offset: 2px; }

@@ -66,7 +66,11 @@ function ConversationDemo({ initialSessionId, Composer }: { initialSessionId: st
     fixtureNewChat: async () => { await fetch('/chat', { method: 'POST' }); setSessionId(await form.reload()); },
     fixtureRejectNext: () => fetch('/reject', { method: 'POST' }),
     fixtureRemount: async () => { await form.reload(); setGeneration(value => value + 1); },
-    fixtureRestart: async () => { await fetch('/restart', { method: 'POST' }); await form.reload(); setGeneration(value => value + 1); },
+    fixtureRestart: async () => {
+      await fetch('/restart', { method: 'POST' }); await form.reload();
+      (window as unknown as { fixtureResetConnection(): void }).fixtureResetConnection();
+      setGeneration(value => value + 1);
+    },
     fixtureShowSettings: () => setPage(true),
   });
   if (page) return <SettingsPage form={form} t={t} />;

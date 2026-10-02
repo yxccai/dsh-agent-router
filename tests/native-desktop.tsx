@@ -24,24 +24,64 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
     if (!factory) throw new Error('Desktop bundle did not register.');
     return factory(id => { if (!(id in modules)) throw new Error('Missing desktop module: ' + id); return modules[id]; });
   };
-  const native = await load('/conversation.js'), plugin = await load('/plugin.js');
+  const native = await load('/conversation.js'), models = await load('/models.js'), plugin = await load('/plugin.js');
+  const ctx = new Cordis.Context();
   const entries = new Map<string, ComponentType<any>>();
   const registrations: string[] = [];
-  // The actual plugin decides its slot; this catches a regression back to the dock.
-  plugin.apply({
-    effect: (fn: () => unknown) => fn(),
-    locale: { register: () => () => {}, bind: () => t },
-    sidebarRightTabs: { register: () => () => {} },
-    configForms: { get: () => form },
-    remote: { session: { modelCatalog: async () => ({ ok: true, value: await (await fetch('/catalog')).json() }) } },
-    slots: {
+  const bindings = new Map<string, { scope: Cordis.Context; session: { getSnapshot(): { blank: boolean }; projections: { faceOf(): Store.SnapshotStore<any> } } }>();
+  const bindingFor = (id: string) => {
+    let binding = bindings.get(id);
+    if (!binding) {
+      const projected = Store.createSnapshotStore({ lastUsed: null, next: { provider: 'fixture', model: 'capable' } });
+      binding = { scope: ctx.extend(), session: { getSnapshot: () => ({ blank: true }), projections: { faceOf: () => projected } } };
+      bindings.set(id, binding);
+    }
+    return binding;
+  };
+  const listeners = new Map<string, Set<() => void>>();
+  const publish = (event: string) => { for (const fn of listeners.get(event) ?? []) fn(); };
+  let catalogCalls = 0;
+  const sessionRemote = {
+    modelCatalog: async () => {
+      catalogCalls++;
+      const response = await fetch('/catalog'), value = await response.json();
+      return response.ok ? { ok: true, value } : { ok: false, error: value };
+    },
+    selectModel: async ({ sessionId, ...selection }: { sessionId: string; provider: string; model: string }) => {
+      bindingFor(sessionId).session.projections.faceOf().set({ lastUsed: null, next: selection });
+      return { ok: true, value: undefined };
+    },
+  };
+  // Services are provided by a sibling plugin, as in the real desktop. Root-provided
+  // test objects would conceal undeclared dependency access in the consuming plugin.
+  await ctx.plugin({ apply(scope: Cordis.Context) {
+    scope.provide('sessions', { scope: (id: string) => bindingFor(id).scope, binding: bindingFor, subagentAddress: () => undefined } as never);
+    scope.provide('remote', { session: sessionRemote, $on: (event: string, fn: () => void) => {
+      if (!listeners.has(event)) listeners.set(event, new Set()); listeners.get(event)!.add(fn);
+      return () => listeners.get(event)!.delete(fn);
+    } } as never);
+    scope.provide('remote.session', sessionRemote);
+    scope.provide('locale', { register: () => () => {}, bind: () => t } as never);
+    scope.provide('sidebarRightTabs', { register: () => () => {} } as never);
+    scope.provide('configForms', { get: () => form } as never);
+    scope.provide('slots', {
       inject: (_name: string, fn: () => unknown) => fn(),
-      register: (options: { name: string; inject?: () => object }, Component: ComponentType<any>) => {
+      register: (options: { name: string; inject?: (sessionId: string) => object }, Component: ComponentType<any>) => {
         registrations.push(options.name);
-        entries.set(options.name, props => <Component {...options.inject?.()} {...props} />);
+        entries.set(options.name, props => <Component {...options.inject?.(props.sessionId)} {...props} />);
         return () => {};
       },
+    } as never);
+  } });
+  await ctx.plugin(models.ModelDirectoryResolver);
+  await ctx.plugin(plugin);
+  Object.assign(window, {
+    fixtureDisposeClient: () => ctx.fiber.dispose(),
+    fixtureCatalogCalls: () => catalogCalls,
+    fixtureCatalogMode: async (mode: string) => {
+      await fetch('/catalog-mode', { method: 'POST', body: mode }); publish('settings/document-updated');
     },
+    fixtureResetConnection: () => ctx.emit('connection/reset'),
   });
   Object.assign(window, { fixtureSlots: registrations, fixtureNativeClasses: native.__fixtureCSS });
   const locale = native.__fixtureLocales.zh as Record<string, string>;
@@ -51,6 +91,13 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
     return text;
   };
   const InputBar = native.__fixtureInputBar as ComponentType<any>;
+  const ModelSelect = models.__fixtureModelSelect as ComponentType<any>;
+  const modelLocale = models.__fixtureLocales.zh as Record<string, string>;
+  const modelTranslate = (key: string, vars?: Record<string, string>) => {
+    let text = modelLocale[key] ?? key;
+    for (const [name, value] of Object.entries(vars ?? {})) text = text.replaceAll('{' + name + '}', value);
+    return text;
+  };
   const session = { subagent: null, removed: false, running: false, promptError: null };
   const selectSession = (select: (state: typeof session) => unknown) => select(session);
   const selection = { next: { provider: 'fixture', model: 'capable' } };
@@ -72,7 +119,11 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
         if (Component) return <Component key={sessionId} sessionId={sessionId} useSession={selectSession} useProjection={useProjection} t={t} />;
         if (name === 'conversation.input.permission') return <Primitives.Button size="sm" variant="ghost" className="fixture-native-chip"
           icon={<Primitives.PermissionIconWorkspaceWriteRegular size={14} />}>工作区内修改<Primitives.IconChevronDownOutlineRegular size={12} /></Primitives.Button>;
-        if (name === 'conversation.input.model') return <Primitives.Button size="sm" variant="ghost" className="fixture-native-chip fixture-model">capable-model<Primitives.IconChevronDownOutlineRegular size={12} /></Primitives.Button>;
+        if (name === 'conversation.input.model') {
+          const directory = ctx.modelDirectories.directoryFor(sessionId as never);
+          return <div className="fixture-model"><ModelSelect locked={false} available directory={directory.store}
+            load={() => { void directory.load().catch(() => {}); }} select={(selection: never) => directory.select(selection)} t={modelTranslate} /></div>;
+        }
         return null;
       }} />;
   }
