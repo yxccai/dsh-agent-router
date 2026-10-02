@@ -32,20 +32,23 @@
 .dar-empty { display: flex; align-items: center; justify-content: center; min-height: 180px; color: var(--dsw-alias-label-secondary); }
 .dar-notice { color: var(--dsw-alias-label-secondary); font-size: 12px; padding-bottom: 8px; }
 @media (pointer: coarse) { .dar-panel button:not(.dar-node) { min-height: 44px; } }
-.dar-controls, .dar-settings { color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; }
-.dar-controls { padding: 6px 4px 0; container-type: inline-size; }
-.dar-controls *, .dar-settings * { box-sizing: border-box; }
-.dar-control-line, .dar-pair { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dar-toggle { display: inline-flex; align-items: center; gap: 7px; color: inherit; background: transparent; border: 0; padding: 4px 0; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
-.dar-toggle-track { display: inline-flex; align-items: center; width: 24px; height: 14px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; background: var(--dsw-alias-interactive-bg-hover); padding: 2px; }
-.dar-toggle-track > span { width: 8px; height: 8px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
-.dar-toggle[aria-checked=true] .dar-toggle-track { border-color: var(--dsw-static-blue-450); }
-.dar-toggle[aria-checked=true] .dar-toggle-track > span { margin-left: auto; background: var(--dsw-static-blue-450); }
-.dar-pair { flex: 1; min-width: 0; gap: 6px; }
-.dar-picker { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 110px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
-.dar-picker > span { white-space: nowrap; }
-.dar-picker select { width: 100%; min-width: 0; max-width: 240px; border: 1px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md, 6px); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; padding: 4px 5px; }
-.dar-pair-arrow { color: var(--dsw-alias-label-tertiary); }
+.dar-controls, .dar-model-popover, .dar-settings { color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family, system-ui, sans-serif); font-size: 13px; }
+.dar-controls { display: inline-flex; align-items: center; flex: none; height: 28px; white-space: nowrap; }
+.dar-controls *, .dar-model-popover *, .dar-settings * { box-sizing: border-box; }
+.dar-controls .dar-toggle { height: 28px; padding: 0 4px 0 6px; gap: 5px; border-radius: var(--dsw-radius-sm); color: var(--dsw-alias-label-secondary); font: 500 13px / 20px var(--dsw-font-family, system-ui, sans-serif); }
+.dar-enabled-dot { display: none; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.dar-controls[data-enabled=true] .dar-toggle { color: var(--dsw-alias-button-info-fill); background: var(--dsw-alias-interactive-bg-hover); }
+.dar-controls[data-enabled=true] .dar-enabled-dot { display: block; }
+.dar-controls .dar-choose { width: 20px; height: 28px; padding: 0; color: var(--dsw-alias-label-secondary); border-radius: var(--dsw-radius-sm); }
+.dar-choose[aria-expanded=true] { background: var(--dsw-alias-interactive-bg-hover); }
+.dar-model-popover { box-sizing: border-box; position: fixed; z-index: 1000; width: 300px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; box-shadow: var(--dsw-elevation-menu); border: 0.5px solid var(--dsw-alias-border-l1); }
+.dar-popover-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.dar-popover-heading > span { flex: 1; font-weight: 500; }
+.dar-model-popover .dar-popover-close { width: 24px; height: 24px; padding: 0; color: var(--dsw-alias-label-secondary); }
+.dar-pair { display: grid; gap: 12px; }
+.dar-picker { display: grid; gap: 5px; min-width: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.dar-picker select { width: 100%; min-width: 0; height: 34px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md, 6px); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: 400 13px / 20px var(--dsw-font-family, system-ui, sans-serif); padding: 4px 8px; }
+.dar-model-popover .dar-enable { width: 100%; margin-top: 12px; }
 .dar-action { border: 1px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md, 6px); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 5px 12px; cursor: pointer; }
 .dar-link { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; padding: 4px; cursor: pointer; }
 .dar-link:hover { color: var(--dsw-alias-label-primary); }
@@ -61,12 +64,5 @@
 .dar-full-field { grid-column: 1 / -1; }
 .dar-settings details > summary { color: var(--dsw-alias-label-secondary); font-size: 12px; padding: 6px 0; cursor: pointer; }
 .dar-settings-section { border-top: 1px solid var(--dsw-alias-border-l3); padding: 6px 0; }
-.dar-controls button:disabled, .dar-settings button:disabled, .dar-controls select:disabled { opacity: .5; cursor: default; }
-.dar-controls :focus-visible, .dar-settings :focus-visible { outline: 2px solid var(--dsw-static-blue-450); outline-offset: 2px; }
-@container (max-width: 480px) {
-  .dar-pair { flex-basis: 100%; display: grid; grid-template-columns: 1fr; gap: 6px; }
-  .dar-picker { min-width: 0; }
-  .dar-picker > span { min-width: 44px; }
-  .dar-picker select { max-width: none; }
-  .dar-pair-arrow { display: none; }
-}
+.dar-model-popover select:disabled, .dar-settings button:disabled { opacity: .5; cursor: default; }
+.dar-controls :focus-visible, .dar-model-popover :focus-visible, .dar-settings :focus-visible { outline: 2px solid var(--dsw-static-blue-450); outline-offset: 2px; }

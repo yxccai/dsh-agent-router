@@ -4,7 +4,7 @@ The Host plugin contributes two DSH tools and one client-visible native session 
 
 ## Chat controls and configuration
 
-The compact switch and main/worker selectors occupy the native `conversation.composer.dock` list slot. Child-agent and removed-session views do not show the controls. The plugin registers `plugins.bundle.config` and `plugins.row.config` so its configuration is reachable from the normal Plugins detail page.
+The compact toggle and model-picker arrow occupy the native `conversation.input.left` list slot inside the composer toolbar. Main/worker selectors appear in a portaled `MenuSurface`, positioned by DSH's `useAnchoredPosition` and dismissed by outside pointer or Escape. The toolbar control retains its intrinsic width; it has no size containment. Child-agent and removed-session views do not show the controls. The plugin registers `plugins.bundle.config` and `plugins.row.config` so its configuration is reachable from the normal Plugins detail page.
 
 Both surfaces use the shared `configForms` service for the `dsh-agent-router` profile entry. An accepted atomic, revision-fenced mutation saves model definitions, the remembered pair and current chat binding together. Rejected/conflicting writes preserve the actual Host state and display an in-place error. No plugin-local browser storage, custom HTTP endpoint or app binary patch is used.
 

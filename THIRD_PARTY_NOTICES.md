@@ -1,6 +1,6 @@
 # Third-party notices
 
-The built browser client includes Zod. React and DSH libraries are loaded from
+The built browser client includes Zod. React, React DOM and DSH libraries are loaded from
 the host; their licenses remain in their distributed packages.
 
 ## Zod

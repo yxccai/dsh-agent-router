@@ -13,7 +13,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import SubagentRuntime from '@deepseek-ai/dsh-subagent';
 
-const archive = resolve(process.argv[2] ?? 'artifacts/dsh-agent-router-0.2.0.tgz');
+const archive = resolve(process.argv[2] ?? 'artifacts/dsh-agent-router-0.2.1.tgz');
 await mkdir('.test-output', { recursive: true });
 const directory = await mkdtemp(resolve('.test-output', 'package-'));
 const ctx = new Context();
@@ -24,6 +24,9 @@ try {
   execFileSync('tar', ['-xf', archive, '-C', directory]);
   const root = join(directory, 'package');
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  assert.equal(manifest.version, JSON.parse(await readFile('package.json', 'utf8')).version);
+  assert.deepEqual(await readFile(join(root, 'lib/client.js')), await readFile('lib/client.js'),
+    'The installation archive must contain the browser-tested client bundle.');
   const rows = composeEntries(bundlePatchPaths(root, manifest.dsh.bundle).map(file => loadOverlayPatches('dsh', file)));
   assert.equal(rows.length, 1);
   assert.equal(rows[0].name, manifest.name);
@@ -40,7 +43,7 @@ try {
   assert.equal(typeof ctx.tools.get('team_delegate')?.execute, 'function');
   await fiber.dispose();
   assert.equal(ctx.tools.get('team_delegate'), undefined);
-  console.log('Packed archive: native DSH patch parsed; extracted Host mounted and disposed; source archive excludes credentials and development caches.');
+  console.log('Packed archive: browser-tested client bytes match; native DSH patch parsed; extracted Host mounted and disposed; archive excludes credentials and development caches.');
 } finally {
   await ctx.fiber.dispose();
   if (!resolve(directory).startsWith(resolve('.test-output') + sep)) throw new Error('Package cleanup escaped its private output root.');

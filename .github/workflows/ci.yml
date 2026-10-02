@@ -20,7 +20,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
       - run: npm pack --pack-destination .test-output
-      - run: node scripts/verify-pack.mjs .test-output/dsh-agent-router-0.2.0.tgz
+      - run: node scripts/verify-pack.mjs .test-output/dsh-agent-router-0.2.1.tgz
       - uses: actions/upload-artifact@v4
         with:
           name: plugin-package

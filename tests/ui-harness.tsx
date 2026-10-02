@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Graph } from '../src/client/Graph.tsx';
-import { ChatControls } from '../src/client/ChatControls.tsx';
+import { loadDesktop } from './native-desktop.tsx';
+import type { ComponentType } from 'react';
 import { SettingsPage } from '../src/client/SettingsPage.tsx';
 import { configSchema, type Settings } from '../src/settings-schema.ts';
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client';
@@ -59,8 +60,7 @@ class FixtureForm implements ConfigForm<Settings> {
   unset(field: string) { return this.mutate([{ op: 'unset', path: [field] }]); }
 }
 const form = new FixtureForm();
-const loadCatalog = async () => (await fetch('/catalog')).json();
-function ConversationDemo({ initialSessionId }: { initialSessionId: string }) {
+function ConversationDemo({ initialSessionId, Composer }: { initialSessionId: string; Composer: ComponentType<{ sessionId: string }> }) {
   const [sessionId, setSessionId] = useState(initialSessionId), [generation, setGeneration] = useState(0), [page, setPage] = useState(false);
   Object.assign(window, {
     fixtureNewChat: async () => { await fetch('/chat', { method: 'POST' }); setSessionId(await form.reload()); },
@@ -70,13 +70,10 @@ function ConversationDemo({ initialSessionId }: { initialSessionId: string }) {
     fixtureShowSettings: () => setPage(true),
   });
   if (page) return <SettingsPage form={form} t={t} />;
-  return <div className="fixture-conversation"><div className="fixture-composer">
-    <textarea aria-label="Message" defaultValue="把资料整理交给子模型，完成后由主模型检查。" />
-    <div className="fixture-submit"><span>Enter ↵</span><span aria-hidden="true">↑</span></div>
-  </div><ChatControls key={`${sessionId}:${generation}`} sessionId={sessionId} form={form} loadCatalog={loadCatalog} current={{ provider: 'fixture', model: 'capable' }} t={t} /></div>;
+  return <div className="fixture-conversation"><Composer key={`${sessionId}:${generation}`} sessionId={sessionId} /></div>;
 }
 const root = createRoot(document.getElementById('root')!);
 if (new URL(location.href).searchParams.get('view') === 'controls') {
-  document.querySelector('header')!.textContent = '模型分工 · 组件演示';
-  void form.reload().then(sessionId => root.render(<ConversationDemo initialSessionId={sessionId} />));
+  document.querySelector('header')!.textContent = 'DSH 原生聊天框 · 插件布局测试';
+  void Promise.all([form.reload(), loadDesktop(form, t)]).then(([sessionId, Composer]) => root.render(<ConversationDemo initialSessionId={sessionId} Composer={Composer} />));
 } else root.render(<Demo />);

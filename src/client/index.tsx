@@ -23,7 +23,7 @@ import css from './style.css';
 export const inject = ['sessions', 'slots', 'locale', 'sidebarRightTabs', 'configForms', 'remote.session'];
 const ID = 'dsh-agent-router';
 type BodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS> & { sessions: ISessions };
-type ControlsProps = PropsRuntime<'conversation.composer.dock'> & PropsLocale<typeof NS> & { settingsForm: SettingsForm; loadCatalog: LoadCatalog };
+type ControlsProps = PropsRuntime<'conversation.input.left'> & PropsLocale<typeof NS> & { settingsForm: SettingsForm; loadCatalog: LoadCatalog };
 function Controls({ sessionId, useSession, useProjection, settingsForm, loadCatalog, t }: ControlsProps) {
   const selection = useProjection('modelSelection');
   const unavailable = useSession(session => !!session.subagent || session.removed);
@@ -89,8 +89,8 @@ export function apply(ctx: Context): void {
     if (!result.ok) throw new Error('The model catalog could not be loaded.');
     return result.value;
   };
-  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-    name: 'conversation.composer.dock', id: ID, locale: NS, order: 35, registrant: ID,
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left', id: ID, locale: NS, order: 35, registrant: ID,
     inject: () => ({ settingsForm, loadCatalog }),
   }, Controls));
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
