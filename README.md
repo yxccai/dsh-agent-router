@@ -4,6 +4,10 @@
 
 Let a capable main model plan and accept the work, while configurable lower-cost model roles handle bounded tasks. Inspect the real agents as boxes connected by arrows in DSH's existing right sidebar.
 
+Turn on **Model delegation** beside the chat input and choose the main and worker models there. Every new chat starts off; enabling it restores your last model pair, including after restart.
+
+![Model controls beside the chat input](docs/composer-light.png)
+
 ![Agent graph component preview](docs/screenshot-light.png)
 
 The preview uses illustrative data rendered by the shipping component. The installed plugin reads actual DSH session records.
@@ -12,17 +16,23 @@ The preview uses illustrative data rendered by the shipping component. The insta
 
 Requires **DeepSeek Harness Desktop 0.2.0-rc.2** with its native in-process spawn provider. This release targets that version; future DSH releases may require a plugin update.
 
-1. Download **dsh-agent-router-0.1.0.tgz** from [Releases](https://github.com/yxccai/dsh-agent-router/releases/latest).
+1. Download **dsh-agent-router-0.2.0.tgz** from [Releases](https://github.com/yxccai/dsh-agent-router/releases/latest).
 2. Open DSH → **Plugins** → install, and enter the absolute path to the downloaded archive.
 3. Enable **dsh-agent-router**. If the new sidebar entry does not appear, restart DSH.
-4. In the plugin configuration, add your model routes and roles. Keep a capable model selected for the main conversation.
+4. Click **Model delegation** beside the chat input, choose **Main / Worker**, then click **Enable**. Subsequent toggles restore the last selected pair.
 5. Open **Agent graph** from the right-sidebar guide.
 
 Alternatively install from GitHub using `https://github.com/yxccai/dsh-agent-router`. Built Host and client files are included, so users do not need a compiler. No npm registry publication is required.
 
+To upgrade from 0.1.0, uninstall the old package through the plugin manager, install the new package and restart DSH. Version 0.1.0 omitted the configuration-page registration. Version 0.2.0 supplies the form in **Plugins → Installed → dsh-agent-router**, and through the component row's configure button. Keep a copy of existing model/role configuration before updating.
+
 ## Configure
 
 Use DSH's existing provider configuration for API keys and endpoints. This plugin refers to provider/model IDs and stores no API keys. A provider must already be available in DSH; different API protocols need the appropriate DSH adapter.
+
+For everyday use, select models beside the chat input. Choices come from DSH's provider catalog; choose a worker explicitly on first activation. Selected routes are added to the plugin settings with unknown prices. Edit prices, verification, fallback, tool restrictions and concurrency in **Plugins → Installed → dsh-agent-router**.
+
+The switch belongs to the current chat. New chats always start off; explicitly enabled chats retain their state. Disabling preserves preferences and prevents new `team_delegate` invocations. Already-started delegations keep their settings snapshot. Ordinary model selection follows native DSH behavior after disabling, so DSH may retain the last actually used main model.
 
 The following is the **config object**, not a complete profile patch. Replace the example provider and model IDs with the exact IDs supported by your adapter.
 
@@ -54,13 +64,13 @@ finalReviewReserve: 0
 currency: USD
 ```
 
-All roles and model routes are user-defined. Add extraction, translation, coding or review roles as needed. `verifierModelId` optionally runs a separate, tool-free reviewer against your explicit acceptance criteria. Leave it empty to let the main model review the answer directly and avoid another paid call.
+Roles and model routes are user-defined. When enabled, the chat controls select the actual main route and override each role's initial worker route. Role-specific verifier, fallback and tool restrictions retain their configured values. Without custom roles, an automatic `worker` role uses the selected worker and can escalate to the main model after failure; identical main/worker choices do not add an extra fallback attempt. `verifierModelId` optionally runs a separate, tool-free reviewer; leave it empty for main-agent acceptance without another paid call.
 
 Model `reasoningEffort` is optional and must be supported by the chosen adapter. Prices are **per million tokens in one common currency**; `-1` means unknown, `0` means free. Prices can be omitted. They never select a provider automatically.
 
 | Setting | Meaning |
 |---|---|
-| `modelId` / `fallbackModelId` | Initial worker and optional escalation route |
+| `modelId` / `fallbackModelId` | Role model reference (initial route overridden by chat worker choice) and optional escalation route |
 | `verifierModelId` | Optional separate model reviewer; a passed review still needs main-agent acceptance |
 | `toolAllow` | Nonempty array restricts child tools; empty inherits permitted tools except `team_delegate` |
 | `qualityRetries` | Additional primary-model attempts after unsuccessful completion or review, 0–3 |
@@ -75,12 +85,14 @@ The UI follows DSH's language and theme. Configuration changes affect new delega
 
 ## Use
 
-Try: “Use team_roles to inspect my configured roles. Plan the task yourself, delegate the source extraction to research with clear acceptance criteria, then check the evidence and give the final answer.”
+Enable **Model delegation** first. Try: “Use team_roles to inspect my roles. Plan the task yourself, delegate the source extraction to worker with clear acceptance criteria, then check the evidence and give the final answer.” Replace `worker` with your role name when using custom roles.
 
 The plugin exposes two normal DSH tools:
 
-- **team_roles** lists configured roles and prices.
+- **team_roles** lists roles and prices.
 - **team_delegate** receives `role`, `task`, `acceptance` and optional `context`. It uses a fresh child, awaits completion and disposal, and returns the result with actual worker/reviewer session IDs.
+
+When delegation is off, both tools are hidden from that Agent's available tools and model context; new delegation attempts are also refused at runtime.
 
 The main model decides when delegation is useful. Direct tools remain preferable for deterministic work. Native permissions still apply. Setup, authorization and disposal errors propagate; they do not silently trigger a different model.
 
@@ -110,6 +122,6 @@ npm pack
 
 Node 22.19+ is required. Windows UI tests can use an existing Chrome installation. CI uses Playwright Chromium. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` can select a local browser.
 
-The keyless integration suite runs the real Cordis, DSH agent loop, native tools, spawn backend and projections; only the model/network boundary is scripted. Tests cover role discovery, model selection, reviewer rejection, bounded escalation, cancellation, disposal, replay, unknown pricing, concurrent reservations and the built desktop client loader. Browser checks cover light/dark themes, a 320px sidebar, selection, request details, focus and error preservation.
+Keyless tests run real Cordis, the DSH agent loop, native tools, spawn, projections, the profile editor and Loader; the model/network boundary is scripted. Coverage includes default-off gating, actual main/worker request routes, persisted preferences, new chats, write conflicts, review failures, bounded escalation, cancellation, disposal, replay and budgets. Browser checks cover light/dark themes, 320px layout, graph interaction, chat controls, rejected saves and writes to the native Host form.
 
 No paid provider API was exercised for this release. Contributions and [issues](https://github.com/yxccai/dsh-agent-router/issues) are welcome. Licensed under [MIT](LICENSE).

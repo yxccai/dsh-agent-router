@@ -6,13 +6,14 @@ import { pathToFileURL } from 'node:url';
 import { loadOverlayPatches, composeEntries, bundlePatchPaths } from '@deepseek-ai/dsh-app-boot';
 import { Context } from '@deepseek-ai/cordis';
 import LlmRuntime from '@deepseek-ai/dsh-llm';
+import AgentRegistry from '@deepseek-ai/dsh-agent';
 import SessionStore from '@deepseek-ai/dsh-session';
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime from '@deepseek-ai/dsh-tools';
 import SubagentRuntime from '@deepseek-ai/dsh-subagent';
 
-const archive = resolve(process.argv[2] ?? 'artifacts/dsh-agent-router-0.1.0.tgz');
+const archive = resolve(process.argv[2] ?? 'artifacts/dsh-agent-router-0.2.0.tgz');
 await mkdir('.test-output', { recursive: true });
 const directory = await mkdtemp(resolve('.test-output', 'package-'));
 const ctx = new Context();
@@ -32,6 +33,7 @@ try {
   await ctx.plugin(SessionProjectionRegistry);
   await ctx.plugin(SystemPrompt, {});
   await ctx.plugin(ToolRuntime, {});
+  await ctx.plugin(AgentRegistry);
   await ctx.plugin(SubagentRuntime, {});
   const fiber = await ctx.plugin(plugin, rows[0].config);
   assert.equal(typeof ctx.tools.get('team_roles')?.execute, 'function');

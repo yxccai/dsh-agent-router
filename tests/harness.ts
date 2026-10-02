@@ -57,8 +57,9 @@ export class FixtureAdapter extends LlmAdapter {
   }
 }
 
-export async function harness(adapter: LlmAdapter, config = settings(), plugin: typeof Router = Router) {
+export async function harness(adapter: LlmAdapter, config = settings(), plugin: typeof Router = Router, enabled = true) {
   const ctx = new Context();
+  const parentId = SessionId(crypto.randomUUID());
   try {
     await ctx.plugin(LlmRuntime);
     await ctx.plugin(SessionStore);
@@ -69,9 +70,9 @@ export async function harness(adapter: LlmAdapter, config = settings(), plugin: 
     await ctx.plugin(AgentLoop, { agents: [] });
     await ctx.plugin(SubagentRuntime, {});
     await ctx.plugin(Spawn, { providerName: 'spawn' });
-    const router = await ctx.plugin(plugin, config);
+    const router = await ctx.plugin(plugin, enabled ? { ...config, chatBindings: [{ sessionId: parentId, mainModelId: 'capable', workerModelId: 'economy' }] } : config);
     ctx.llm.registerAdapter(['fixture'], adapter);
-    const parent = await ctx.agentLoop.create(SessionId(crypto.randomUUID()), { provider: 'fixture', model: 'capable' });
+    const parent = await ctx.agentLoop.create(parentId, { provider: 'fixture', model: 'capable' });
     return { ctx, parent, router };
   } catch (error) { await ctx.fiber.dispose(); throw error; }
 }

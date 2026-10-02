@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Configurable multi-model delegation, cost tracking and live agent graphs for DeepSeek Harness.",
   "type": "module",
   "license": "MIT",
@@ -36,7 +36,11 @@
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-api-remotes"
       ]
     }
   },
@@ -44,7 +48,7 @@
     "build": "node scripts/build.mjs",
     "check": "tsc --noEmit -p tsconfig.host.json && tsc --noEmit -p tsconfig.client.json",
     "test": "tsx --test tests/*.test.ts",
-    "test:ui": "node scripts/test-ui.mjs",
+    "test:ui": "tsx scripts/test-ui.mjs",
     "prepack": "npm run build"
   },
   "peerDependencies": {
@@ -63,15 +67,21 @@
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-include": "1.0.9",
     "@deepseek-ai/dsh-agent-loop": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-api-remotes": "0.2.0-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
     "@deepseek-ai/dsh-app-boot": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-store": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-session": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.0-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-config-editor": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-settings": "0.2.0-rc.2",
     "@deepseek-ai/dsh-subagent-spawn-in-process": "^0.2.0-rc.2",
     "@deepseek-ai/dsh-system-prompt": "^0.2.0-rc.2",
     "@types/js-yaml": "4.0.9",

@@ -26,7 +26,7 @@ test('built client registers a lazy factory with the desktop ModuleLoader', asyn
   const ids: string[] = [];
   const client = registration!.factory(id => { ids.push(id); return {}; });
   assert.equal(typeof client.apply, 'function');
-  assert.deepEqual(Array.from(client.inject), ['sessions', 'slots', 'locale', 'sidebarRightTabs']);
+  assert.deepEqual(Array.from(client.inject), ['sessions', 'slots', 'locale', 'sidebarRightTabs', 'configForms', 'remote.session']);
   assert.deepEqual(new Set(ids), new Set(['react', 'react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives']));
 });
 

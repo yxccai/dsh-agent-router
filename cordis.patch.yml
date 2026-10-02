@@ -13,3 +13,6 @@
         currency: USD
         models: []
         roles: []
+        lastMainModelId: ""
+        lastWorkerModelId: ""
+        chatBindings: []

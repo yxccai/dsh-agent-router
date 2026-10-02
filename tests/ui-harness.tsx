@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Graph } from '../src/client/Graph.tsx';
+import { ChatControls } from '../src/client/ChatControls.tsx';
+import { SettingsPage } from '../src/client/SettingsPage.tsx';
+import { configSchema, type Settings } from '../src/settings-schema.ts';
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client';
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client';
 import { en, zh, type Key } from '../src/client/locales.ts';
 import { viewSchema } from '../src/contracts.ts';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
@@ -32,4 +37,46 @@ function Demo() {
   });
   return <Graph agents={rows} t={t} incomplete={incomplete} onRetry={() => setIncomplete(false)} />;
 }
-createRoot(document.getElementById('root')!).render(<Demo />);
+
+/** Browser-to-Host test transport; persistence and acceptance use the real DSH editor. */
+class FixtureForm implements ConfigForm<Settings> {
+  private state: ConfigFormSnapshot<Settings> = { status: 'loading', value: undefined, base: {}, user: {}, revision: undefined, writable: false, mode: 'host' };
+  private listeners = new Set<() => void>();
+  getSnapshot() { return this.state; }
+  subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  accept(snapshot: ConfigFormSnapshot<Settings>) {
+    this.state = { ...snapshot, value: snapshot.value ? configSchema.parse(snapshot.value) : undefined };
+    for (const listener of this.listeners) listener();
+  }
+  async reload() {
+    const data = await (await fetch('/prefs')).json(); this.accept(data.state); return data.sessionId as string;
+  }
+  async mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number) {
+    const data = await (await fetch('/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops, expectedRevision }) })).json();
+    this.accept(data.state); return data.accepted as boolean;
+  }
+  set(field: string, value: unknown) { return this.mutate([{ op: 'set', path: [field], value: value as Extract<SettingsPathOpView, { op: 'set' }>['value'] }]); }
+  unset(field: string) { return this.mutate([{ op: 'unset', path: [field] }]); }
+}
+const form = new FixtureForm();
+const loadCatalog = async () => (await fetch('/catalog')).json();
+function ConversationDemo({ initialSessionId }: { initialSessionId: string }) {
+  const [sessionId, setSessionId] = useState(initialSessionId), [generation, setGeneration] = useState(0), [page, setPage] = useState(false);
+  Object.assign(window, {
+    fixtureNewChat: async () => { await fetch('/chat', { method: 'POST' }); setSessionId(await form.reload()); },
+    fixtureRejectNext: () => fetch('/reject', { method: 'POST' }),
+    fixtureRemount: async () => { await form.reload(); setGeneration(value => value + 1); },
+    fixtureRestart: async () => { await fetch('/restart', { method: 'POST' }); await form.reload(); setGeneration(value => value + 1); },
+    fixtureShowSettings: () => setPage(true),
+  });
+  if (page) return <SettingsPage form={form} t={t} />;
+  return <div className="fixture-conversation"><div className="fixture-composer">
+    <textarea aria-label="Message" defaultValue="把资料整理交给子模型，完成后由主模型检查。" />
+    <div className="fixture-submit"><span>Enter ↵</span><span aria-hidden="true">↑</span></div>
+  </div><ChatControls key={`${sessionId}:${generation}`} sessionId={sessionId} form={form} loadCatalog={loadCatalog} current={{ provider: 'fixture', model: 'capable' }} t={t} /></div>;
+}
+const root = createRoot(document.getElementById('root')!);
+if (new URL(location.href).searchParams.get('view') === 'controls') {
+  document.querySelector('header')!.textContent = '模型分工 · 组件演示';
+  void form.reload().then(sessionId => root.render(<ConversationDemo initialSessionId={sessionId} />));
+} else root.render(<Demo />);
