@@ -20,7 +20,7 @@ The composer screenshots render DSH's published native composer and model picker
 
 Requires **DeepSeek Harness Desktop 0.2.0-rc.2** with its native in-process spawn provider. This release targets that version; future DSH releases may require a plugin update.
 
-1. Download **dsh-agent-router-0.2.2.tgz** from [Releases](https://github.com/yxccai/dsh-agent-router/releases/latest).
+1. Download **dsh-agent-router-0.2.3.tgz** from [Releases](https://github.com/yxccai/dsh-agent-router/releases/latest).
 2. Open DSH → **Plugins** → install, and enter the absolute path to the downloaded archive.
 3. Enable **dsh-agent-router**. If the new sidebar entry does not appear, restart DSH.
 4. Click **Model delegation** inside the input. On first use, choose **Main / Worker** in the popover and click **Enable**. Later, the button toggles delegation directly; its adjacent arrow changes models.
@@ -35,6 +35,8 @@ To upgrade from 0.1.0, uninstall the old package through the plugin manager, ins
 Use DSH's existing provider configuration for API keys and endpoints. This plugin refers to provider/model IDs and stores no API keys. A provider must already be available in DSH; different API protocols need the appropriate DSH adapter.
 
 The toolbar button is gray when off and blue with a status dot when enabled. Main/worker menus share the original right-side picker's native catalog, group models by provider and show search when there are more than four choices. Provider configuration changes refresh the catalog; one provider's failure leaves other models available. Choose a worker explicitly on first activation. Selected routes are added to the plugin settings with unknown prices. Edit prices, verification, fallback, tool restrictions and concurrency in **Plugins → Installed → dsh-agent-router**.
+
+While delegation is on, **Main** and the original right-side model picker synchronize both ways. Changing either updates the native DSH main-session selection and remembers the new main/worker pair; Worker remains independent. Changes during a started request apply to subsequent requests. If selection succeeds but preferences cannot be saved, both entries retain the actual active main model and the popover offers Retry. Re-enabling restores the last successfully saved pair.
 
 The switch belongs to the current chat. New chats always start off; explicitly enabled chats retain their state. Disabling preserves preferences and prevents new `team_delegate` invocations. Already-started delegations keep their settings snapshot. Ordinary model selection follows native DSH behavior after disabling, so DSH may retain the last actually used main model.
 
@@ -126,6 +128,6 @@ npm pack
 
 Node 22.19+ is required. Windows UI tests can use an existing Chrome installation. CI uses Playwright Chromium. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` can select a local browser.
 
-Keyless tests run real Cordis, the DSH agent loop, native tools, spawn, projections, the profile editor and Loader; the model/network boundary is scripted. Coverage includes default-off gating, actual main/worker request routes, persisted preferences, new chats, write conflicts, review failures, bounded escalation, cancellation, disposal, replay and budgets. Client service tests enforce Cordis dependencies and reproduce the previous undeclared-service catalog failure. Browser checks load the published native composer, model picker, directory service and built plugin against a real Host catalog builder, comparing both lists and checking cache reuse, search, configuration refresh, partial failures and retry. They also cover 916/520/320px light/dark layouts, toolbar/statistics separation, popover margins, Escape/outside dismissal, remembered pairs and rejected Host saves. Session state comes from test services; these checks do not use a user's running desktop session.
+Keyless tests run real Cordis, the DSH agent loop, native tools, spawn, projections, the profile editor and Loader; the model/network boundary is scripted. Coverage includes default-off gating, actual main/worker request routes, persisted preferences, new chats, write conflicts, review failures, bounded escalation, cancellation, disposal, replay and budgets. Client service tests enforce Cordis dependencies and reproduce the previous undeclared-service catalog failure. Browser checks load the published native composer, picker, directory service and built plugin, then dispatch through real selection commands, durable events and the Agent Loop. They verify bidirectional sync, actual routing after refused preference saves, concurrent switches and restart recovery, alongside shared catalog/search/refresh, partial failures/retry and 916/520/320px light/dark layouts. Test sessions use private temporary directories rather than a user's running desktop session.
 
 No paid provider API was exercised for this release. Contributions and [issues](https://github.com/yxccai/dsh-agent-router/issues) are welcome. Licensed under [MIT](LICENSE).

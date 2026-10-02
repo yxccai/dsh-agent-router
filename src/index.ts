@@ -6,6 +6,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import type {} from '@deepseek-ai/dsh-subagent';
 import type {} from '@deepseek-ai/dsh-session';
 import type {} from '@deepseek-ai/dsh-session-projection';
+import type {} from '@deepseek-ai/dsh-api-session-controller/types';
 import { Config, readSettings, resolveModel, scopedSettings } from './config.ts';
 import { projection } from './projection.ts';
 import { Budget, costOf } from './cost.ts';
@@ -37,7 +38,9 @@ export function apply(ctx: Context, config: Config): void {
     const root = rootOf(agent.session);
     const binding = settings.chatBindings.find(item => item.sessionId === root);
     if (!binding) return proposal;
-    if (agent.id === root) {
+    // Native selection already owns prompt assembly and its captured request
+    // route. Saved router preferences must not overwrite that assembled step.
+    if (agent.id === root && ctx.sessionProjections.snapshot(agent.session).values.modelSelection === undefined) {
       const main = resolveModel(settings, binding.mainModelId);
       const { reasoningEffort: _previousEffort, ...base } = proposal;
       const effort = main.reasoningEffort || (proposal.provider === main.provider && proposal.model === main.model ? proposal.reasoningEffort : undefined);
@@ -60,6 +63,12 @@ export function apply(ctx: Context, config: Config): void {
       session = parent;
     }
     return session.id;
+  }
+
+  function settingsFor(agent: Agent) {
+    const root = rootOf(agent.session), session = ctx.sessions.get(root);
+    const selection = session ? ctx.sessionProjections.snapshot(session).values.modelSelection?.next : undefined;
+    return scopedSettings(readSettings(config), root, selection ?? undefined);
   }
 
   ctx.on('llm/stream', async function* (options: GenerateOptions, next: () => AsyncIterable<StreamChunk>) {
@@ -104,7 +113,7 @@ export function apply(ctx: Context, config: Config): void {
     parameters: {}, isConcurrencySafe: () => true,
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(_args, exec) {
-      const current = exec.agent ? scopedSettings(readSettings(config), rootOf(exec.agent.session)) : null;
+      const current = exec.agent ? settingsFor(exec.agent) : null;
       if (!current) return JSON.stringify({ enabled: false, roles: [], instruction: 'Model delegation is off for this chat. The user can enable it beside the chat input. Do not delegate while it is off.' });
       return JSON.stringify({ enabled: true, roles: current.roles, models: current.models, maxParallel: current.maxParallel,
         qualityRetries: current.qualityRetries, instruction: 'Use low-cost roles for bounded tasks with checkable evidence. Review results yourself. accepted:null needs your acceptance; accepted:false is a failed delegation.' });
@@ -123,7 +132,7 @@ export function apply(ctx: Context, config: Config): void {
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute(args, exec) {
       if (!exec.agent) throw new Error('team_delegate requires an active DSH agent.');
-      const current = scopedSettings(readSettings(config), rootOf(exec.agent.session));
+      const current = settingsFor(exec.agent);
       if (!current) throw new Error('Model delegation is off for this chat. Enable it beside the chat input before using team_delegate.');
       const task = taskSchema.parse(args);
       const result = await orchestrator.run(task, exec.agent, exec.signal, current);

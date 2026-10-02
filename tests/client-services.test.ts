@@ -15,7 +15,7 @@ async function loadClient(path: string) {
 
 test('shipping client resolves the same native model directory under Cordis dependency enforcement', async () => {
   const ctx = new Context(), client = await loadClient('lib/client.js');
-  const handle = { store: {}, load: async () => ({}) }, calls: SessionId[] = [];
+  const handle = { store: {}, load: async () => ({}), select: async () => ({ ok: true, value: undefined }) }, calls: SessionId[] = [];
   let entry: { inject(sessionId: SessionId): { directory: typeof handle } } | undefined;
   const remoteReads: string[] = [];
   try {

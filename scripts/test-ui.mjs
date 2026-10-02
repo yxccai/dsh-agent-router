@@ -8,22 +8,27 @@ import { settingsHarness } from '../tests/settings-harness.ts';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import { buildModelCatalog } from '@deepseek-ai/dsh-api-session-controller';
 import { CatalogAdapter } from '../tests/catalog-adapter.ts';
+import { nativeModelHost } from '../tests/native-model-host.ts';
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
 
 await mkdir('.test-output', { recursive: true });
 const temp = await mkdtemp(join('.test-output', 'ui-'));
 const regressionIndex = process.argv.indexOf('--regression-client');
 const regressionClient = regressionIndex === -1 ? undefined : process.argv[regressionIndex + 1];
 if (regressionIndex !== -1 && !regressionClient) throw new Error('Supply a client bundle after --regression-client.');
-let browser, server, host;
+let browser, server, host, releasePreference;
 try {
   const catalogAdapter = new CatalogAdapter();
   host = await settingsHarness(catalogAdapter);
   host.ctx.llm.registerAdapter(['external'], catalogAdapter);
+  let native = await nativeModelHost(host.ctx, host.profile.cwd);
   const advertised = await buildModelCatalog(host.ctx, { provider: 'fixture', model: 'capable' });
   assert.deepEqual(advertised.failures, []);
   assert.equal(advertised.groups.flatMap(group => group.models).length, 6);
   let catalogOffline = false;
-  let parent = await host.createParent(), refuseNext = false;
+  let parent = await host.createParent(), refuseNext = false, refuseModel = false, preferenceWrites = 0;
+  let holdPreference = false, preferenceHeld = false;
+  native.attach(parent);
   const hostState = () => {
     const descriptor = host.ctx.settings.describe().find(item => item.ns === 'dsh-agent-router');
     return { sessionId: parent.id, state: { status: 'ready', value: descriptor.value, base: descriptor.base, user: descriptor.user,
@@ -52,27 +57,67 @@ try {
   `;
   await writeFile(join(temp, 'index.html'), `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><style>${tokens}</style></head><body><header>Agent 调用图</header><main id="root"></main><script src="/app.js"></script></body></html>`);
   server = createServer(async (request, response) => {
-    if (['/prefs', '/catalog', '/catalog-mode', '/chat', '/reject', '/restart'].includes(request.url)) {
+    const path = new URL(request.url, 'http://localhost').pathname;
+    if (['/prefs', '/catalog', '/catalog-mode', '/chat', '/reject', '/restart', '/selection', '/select', '/reject-model', '/prompt', '/hold-prefs', '/prefs-held', '/release-prefs'].includes(path)) {
       response.setHeader('Content-Type', 'application/json');
       try {
         if (request.url === '/prefs' && request.method === 'POST') {
+          preferenceWrites++;
           let raw = ''; for await (const chunk of request) raw += chunk;
           const { ops, expectedRevision } = JSON.parse(raw);
+          if (holdPreference) {
+            holdPreference = false; preferenceHeld = true;
+            await new Promise(resolve => { releasePreference = resolve; }); preferenceHeld = false;
+          }
           let accepted = !refuseNext; refuseNext = false;
           if (accepted) try { await host.ctx.settings.mutate('dsh-agent-router', ops, expectedRevision); } catch { accepted = false; }
           response.end(JSON.stringify({ accepted, ...hostState() })); return;
         }
         if (request.url === '/catalog') {
           if (catalogOffline) { response.statusCode = 503; response.end(JSON.stringify({ code: 'connection/offline', message: 'Fixture offline' })); return; }
-          response.end(JSON.stringify(await buildModelCatalog(host.ctx, { provider: 'fixture', model: 'capable' }))); return;
+          response.end(JSON.stringify(await buildModelCatalog(host.ctx, native.defaultSelection))); return;
+        }
+        if (path === '/selection') {
+          const agent = host.ctx.agents.get(SessionId(new URL(request.url, 'http://localhost').searchParams.get('sessionId')));
+          response.end(JSON.stringify({ projection: agent ? native.snapshot(agent) : { lastUsed: null, next: null } })); return;
+        }
+        if (path === '/select') {
+          let raw = ''; for await (const chunk of request) raw += chunk;
+          const selection = JSON.parse(raw);
+          if (refuseModel) {
+            refuseModel = false;
+            response.end(JSON.stringify({ ok: false, error: { code: 'llm/unavailable', message: 'Fixture selection refused' } })); return;
+          }
+          try {
+            const value = await native.select(selection);
+            response.end(JSON.stringify({ ok: true, value, projection: native.snapshot(host.ctx.agents.get(SessionId(selection.sessionId))) }));
+          } catch (error) {
+            response.end(JSON.stringify({ ok: false, error: { code: error.code ?? 'gateway/internal', message: error.message } }));
+          }
+          return;
+        }
+        if (path === '/prompt') {
+          const start = catalogAdapter.requests.length;
+          parent.followup(createUserMessage({ content: [{ type: 'text', text: 'Check the selected route.' }], source: { kind: 'user' } }));
+          await parent.whenIdle();
+          response.end(JSON.stringify({ projection: native.snapshot(parent), requests: catalogAdapter.requests.slice(start).map(({ provider, model, reasoningEffort }) => ({ provider, model, reasoningEffort })) })); return;
         }
         if (request.url === '/catalog-mode') {
           let mode = ''; for await (const chunk of request) mode += chunk;
           catalogOffline = mode === 'offline'; catalogAdapter.extra = mode === 'extra'; catalogAdapter.failExternal = mode === 'partial';
         }
-        if (request.url === '/chat') parent = await host.createParent();
+        if (request.url === '/chat') { parent = await host.createParent(); native.attach(parent); }
         if (request.url === '/reject') refuseNext = true;
-        if (request.url === '/restart') { const id = parent.id; await host.restart(); host.ctx.llm.registerAdapter(['external'], catalogAdapter); parent = await host.createParent(SessionId(id)); }
+        if (request.url === '/reject-model') refuseModel = true;
+        if (request.url === '/hold-prefs') holdPreference = true;
+        if (request.url === '/prefs-held') { response.end(JSON.stringify({ held: preferenceHeld })); return; }
+        if (request.url === '/release-prefs') { releasePreference?.(); releasePreference = undefined; }
+        if (request.url === '/restart') {
+          const id = parent.id, initial = native.defaultSelection;
+          await host.restart(); host.ctx.llm.registerAdapter(['external'], catalogAdapter);
+          native = await nativeModelHost(host.ctx, host.profile.cwd, initial);
+          parent = await host.createParent(SessionId(id)); native.attach(parent);
+        }
         response.end(JSON.stringify(hostState())); return;
       } catch { response.statusCode = 500; response.end(JSON.stringify({ error: 'Fixture Host failed' })); return; }
     }
@@ -153,7 +198,8 @@ try {
   };
   for (const [width, theme] of [[916, 'light'], [320, 'dark']]) {
     await host.ctx.settings.update('dsh-agent-router', { chatBindings: [], lastMainModelId: '', lastWorkerModelId: '' });
-    parent = await host.createParent();
+    parent = await host.createParent(); native.attach(parent);
+    await native.select({ sessionId: parent.id, provider: 'fixture', model: 'capable' });
     const page = await browser.newPage({ viewport: { width, height: 650 }, deviceScaleFactor: 2 });
     page.setDefaultTimeout(10000);
     const errors = []; page.on('pageerror', error => { errors.push(error.message); console.error('Desktop fixture:', error.message); });
@@ -191,6 +237,25 @@ try {
     const choose = async (label, name) => {
       await page.getByRole('button', { name: label, exact: true }).click();
       await page.getByRole('menuitemradio', { name, exact: true }).click();
+      await page.waitForFunction(({ label, name }) => !document.querySelector('.dar-controls')?.getAttribute('aria-busy')?.includes('true') &&
+        document.querySelector(`[aria-label="${label}"]`)?.textContent.includes(name), { label, name });
+    };
+    const nativeChoose = async name => {
+      await nativeTrigger.click();
+      await page.getByRole('menuitem').filter({ hasText: '模型' }).first().click();
+      await page.getByRole('menu', { name: '模型', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
+      await page.waitForFunction(name => document.querySelector('.fixture-model button[aria-haspopup="menu"]')?.textContent.includes(name), name);
+    };
+    const requestRoute = async (provider, model) => {
+      const requests = await page.evaluate(id => window.fixturePrompt(id), parent.id);
+      assert.deepEqual(requests, [{ provider, model }], 'The real DSH loop must dispatch to the model displayed by both entries.');
+    };
+    const waitRemembered = async (provider, model) => {
+      await page.waitForFunction(async ({ provider, model }) => {
+        const { state } = await (await fetch('/prefs')).json();
+        const saved = state.value.models.find(item => item.id === state.value.lastMainModelId);
+        return saved?.provider === provider && saved?.model === model && !document.querySelector('[role=switch]')?.disabled;
+      }, { provider, model });
     };
     await worker.click();
     const workerMenu = page.getByRole('menu', { name: '子模型', exact: true });
@@ -235,11 +300,56 @@ try {
     await page.evaluate(() => window.fixtureRejectNext());
     await choose('主模型', 'Review Model');
     await page.getByRole('alert').waitFor();
-    assert.match(await main.innerText(), /Capable Model/);
+    assert.match(await main.innerText(), /Review Model/);
+    assert.match(await nativeTrigger.getAttribute('aria-label'), /Review Model/);
+    assert.match(await page.getByRole('alert').innerText(), /分工偏好未保存/);
     assert.equal(await toggle.getAttribute('aria-checked'), 'true');
-    await choose('主模型', 'Review Model');
+    assert.equal(hostState().state.value.lastMainModelId, 'capable', 'A refused preference save must leave the saved form untouched.');
+    const writesAfterFailure = preferenceWrites;
+    await requestRoute('fixture', 'judge');
+    await worker.click(); await page.keyboard.press('Escape');
+    assert.equal(preferenceWrites, writesAfterFailure, 'An unsuccessful automatic save must not spin in a write loop.');
+    await page.getByRole('alert').getByRole('button', { name: '重试', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('[role=switch]')?.disabled && document.querySelector('[aria-label="主模型"]')?.textContent.includes('Review Model') && !document.querySelector('[role=alert]'));
     assert.equal(hostState().state.value.lastMainModelId, 'judge');
+    await page.evaluate(() => fetch('/reject-model', { method: 'POST' }));
+    await main.click(); await page.getByRole('menuitemradio', { name: 'Capable Model', exact: true }).click();
+    await page.getByRole('alert').waitFor();
+    assert.match(await page.getByRole('alert').innerText(), /主模型切换失败/);
+    assert.match(await main.innerText(), /Review Model/); assert.match(await nativeTrigger.getAttribute('aria-label'), /Review Model/);
+    assert.equal(await page.getByRole('alert').getByRole('button').count(), 0);
+    assert.equal(hostState().state.value.lastMainModelId, 'judge');
+    await choose('主模型', 'Capable Model');
+    assert.match(await nativeTrigger.getAttribute('aria-label'), /Capable Model/);
+    await requestRoute('fixture', 'capable');
+    await page.evaluate(() => window.fixtureRejectNext());
+    await worker.click(); await page.getByRole('menuitemradio', { name: 'External Flash', exact: true }).click();
+    await page.getByRole('alert').waitFor();
+    assert.match(await worker.innerText(), /Economy Model/);
+    await page.getByRole('alert').getByRole('button', { name: '重试', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('[role=switch]')?.disabled &&
+      document.querySelector('[aria-label="子模型"]')?.textContent.includes('External Flash') && !document.querySelector('[role=alert]'));
+    assert.match(await nativeTrigger.getAttribute('aria-label'), /Capable Model/);
+    await choose('子模型', 'Economy Model');
+    await nativeChoose('External Capable'); await waitRemembered('external', 'capable');
+    await chooser.click();
+    assert.match(await main.innerText(), /External Capable/); assert.match(await worker.innerText(), /Economy Model/);
+    await requestRoute('external', 'capable');
+    await nativeChoose('Review Model'); await waitRemembered('fixture', 'judge');
+    await chooser.click();
+    assert.match(await main.innerText(), /Review Model/);
+    await requestRoute('fixture', 'judge');
+    await page.evaluate(() => fetch('/hold-prefs', { method: 'POST' }));
+    await main.click(); await page.getByRole('menuitemradio', { name: 'Capable Model', exact: true }).click();
+    await page.waitForFunction(async () => (await (await fetch('/prefs-held')).json()).held);
+    await nativeChoose('External Review');
+    await page.evaluate(() => fetch('/release-prefs', { method: 'POST' }));
+    await waitRemembered('external', 'review');
+    await chooser.click();
+    assert.match(await main.innerText(), /External Review/); assert.match(await worker.innerText(), /Economy Model/);
+    await requestRoute('external', 'review');
+    await nativeChoose('Review Model'); await waitRemembered('fixture', 'judge');
+    await chooser.click();
     await worker.click();
     await page.evaluate(() => window.fixtureCatalogMode('extra'));
     await workerMenu.getByRole('menuitemradio', { name: 'Newly Added Model', exact: true }).waitFor();
@@ -269,6 +379,8 @@ try {
     await chooser.click();
     assert.match(await main.innerText(), /Review Model/);
     assert.match(await worker.innerText(), /Economy Model/);
+    assert.match(await nativeTrigger.getAttribute('aria-label'), /Review Model/);
+    await requestRoute('fixture', 'judge');
     await toggle.click();
     await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false');
     await page.evaluate(() => window.fixtureRestart());
@@ -277,6 +389,7 @@ try {
     await chooser.click();
     assert.match(await main.innerText(), /Review Model/);
     assert.match(await worker.innerText(), /Economy Model/);
+    await requestRoute('fixture', 'judge');
     await assertPopoverFits(page);
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog').count(), 0);
@@ -291,6 +404,11 @@ try {
       await worker.click(); await assertPopoverFits(page);
       await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
     }
+    await toggle.click();
+    await page.waitForFunction(() => document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false');
+    await nativeChoose('Economy Model');
+    assert.equal(hostState().state.value.lastMainModelId, 'judge', 'Native selection while off must preserve the remembered delegation pair.');
+    await requestRoute('fixture', 'economy');
     await page.evaluate(() => window.fixtureShowSettings());
     await page.getByText('价格与输出限制', { exact: true }).first().click();
     const inputPrice = theme === 'light' ? 3.5 : 4.5;
@@ -300,8 +418,9 @@ try {
     assert.equal(hostState().state.value.models[0].inputPrice, inputPrice);
     assert.deepEqual(errors, []); await page.evaluate(() => window.fixtureDisposeClient()); await page.close();
   }
-  if (!regressionClient) console.log('UI: real Cordis services, native catalog builder, original DSH composer/picker and shipping plugin; shared provider groups/cache, search/keyboard, config refresh, partial failures/retry, default-off, Host refusal/acceptance, remembered pairs after restart, settings saves and 916/520/320px light/dark layouts passed.');
+  if (!regressionClient) console.log('UI: native DSH composer/picker, real selection commands and requests; bidirectional main sync, provider identity, actual routing after refused preference saves, selection failure/retry, shared catalog/cache, default-off, remembered pairs/restart, and 916/520/320px light/dark layouts passed.');
 } finally {
+  releasePreference?.();
   await browser?.close();
   if (server) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await host?.dispose();

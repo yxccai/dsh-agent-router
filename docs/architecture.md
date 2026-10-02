@@ -6,11 +6,13 @@ The Host plugin contributes two DSH tools and one client-visible native session 
 
 The compact toggle and model-picker arrow occupy the native `conversation.input.left` list slot inside the composer toolbar. Main/worker selectors appear in a portaled `MenuSurface`, positioned by DSH's `useAnchoredPosition` and dismissed by outside pointer or Escape. The toolbar control retains its intrinsic width; it has no size containment. Child-agent and removed-session views do not show the controls. The plugin registers `plugins.bundle.config` and `plugins.row.config` so its configuration is reachable from the normal Plugins detail page.
 
-Both surfaces use the shared `configForms` service for the `dsh-agent-router` profile entry. An accepted atomic, revision-fenced mutation saves model definitions, the remembered pair and current chat binding together. Rejected/conflicting writes preserve the actual Host state and display an in-place error. No plugin-local browser storage, custom HTTP endpoint or app binary patch is used.
+Both surfaces use the shared `configForms` service for the `dsh-agent-router` profile entry. An accepted atomic, revision-fenced mutation saves model definitions, the remembered pair and current chat binding together. Native model selection is a separate DSH command. A rejected/conflicting preference write preserves the saved form and displays an in-place error with Retry; a successful native selection remains effective. No plugin-local browser storage, custom HTTP endpoint or app binary patch is used.
 
 An absent chat binding means off. Newly created and forked chats have no binding even when preferences exist. Explicitly enabled chats keep their binding across reopening/restart. Disabling removes only that chat's binding, retaining the last pair. Changing choices affects subsequent root requests and new delegations; a running delegation holds its snapshot. The native conversation model can retain its last actual route after disabling.
 
 The client declares the native `modelDirectories` service and resolves `directoryFor(sessionId)`, the same shared directory used by DSH's original composer picker and `/model` command. Its observable store and loader own catalog caching, session defaults, configuration/credential updates and connection resets. Provider-grouped menus use native `MenuGroup`, `Input` and `rankByName`; the plugin does not maintain another remote catalog request or cache. Explicitly configured routes remain available when the catalog is incomplete, and a query failure retains the last loaded models with a Retry action. Credentials stay in DSH's provider configuration. Selected new routes have unknown prices until edited. Without custom roles, a virtual `worker` role supplies the selected worker and optional main-model fallback. With custom roles, the worker selection overrides initial routes while preserving individual verifier, fallback and tool restrictions.
+
+The main selector calls `directory.select`, including when a remembered pair is enabled. For enabled chats, the plugin displays `directory.current` and saves native selection changes into the remembered pair. A failed save has no automatic retry loop; the user can retry explicitly. A switch during a pending preference write is reconciled to the latest native choice after that write settles. The automatic worker fallback resolves the native current main even before preferences are saved. Unconfigured native routes get an ephemeral definition with unknown prices, preserving provider identity and the saved form.
 
 ## Execution
 
@@ -24,7 +26,7 @@ An optional verifier is a separate, tool-free child of the main Agent. DSH's nat
 
 All children are awaited and disposed in `finally`. Admission counts the whole delegation, including reviews; there is no queue. Excess parallel delegations return an explicit capacity error. The tool's caller cancellation signal flows into every child, so stopping the main task stops its owned workers.
 
-For enabled root chats, the native `agent/request` waterfall substitutes the selected main model before request-header persistence and transport preparation. The finalized `llm/stream` envelope is observed without mutation. Child routes remain the explicit worker/verifier/fallback choices; the main route is never applied indiscriminately to descendants.
+DSH's native model selection owns main-agent prompt assembly and the captured request route. The plugin leaves that route intact whenever the native `modelSelection` projection is registered, including its initially empty state. Switching during an assembled step applies to subsequent steps. Hosts without that native projection retain the configured main-route substitution in `agent/request`. The finalized `llm/stream` envelope is observed without mutation. Child routes remain the explicit worker/verifier/fallback choices.
 
 ## Truthful graph
 
@@ -50,7 +52,7 @@ Reservations belong to the current Host plugin instance. Historical conversation
 
 ## Compatibility and packaging
 
-Version 0.2.2 targets DSH 0.2.0-rc.2. It uses published packages, a normal `dsh.bundle.patch` insert and a `./client` lazy CommonJS factory registered with DSH's ModuleLoader. The Host is ESM. Both built halves are shipped for GitHub and tarball installation.
+Version 0.2.3 targets DSH 0.2.0-rc.2. It uses published packages, a normal `dsh.bundle.patch` insert and a `./client` lazy CommonJS factory registered with DSH's ModuleLoader. The Host is ESM. Both built halves are shipped for GitHub and tarball installation.
 
 The desktop client uses native IPC-compatible session objects; no custom HTTP endpoint, separate browser window or app binary patch is needed. The graph follows the existing theme tokens and locale service.
 

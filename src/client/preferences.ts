@@ -5,7 +5,7 @@ import type { ModelDirectory } from '@deepseek-ai/dsh-client-ui-model-selection/
 import { configSchema, modelSchema, type Settings, type Model } from '../settings-schema.ts';
 
 export type SettingsForm = ConfigForm<Settings>;
-export type ModelDirectoryHandle = Pick<ModelDirectory, 'store' | 'load'>;
+export type ModelDirectoryHandle = Pick<ModelDirectory, 'store' | 'load' | 'select'>;
 export const routeKey = (route: Pick<Model, 'provider' | 'model'>) => JSON.stringify([route.provider, route.model]);
 export interface Choice { value: string; name: string; provider: string; providerName?: string; model: string; effort?: string }
 

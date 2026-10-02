@@ -29,12 +29,17 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
   const entries = new Map<string, ComponentType<any>>();
   const registrations: string[] = [];
   const bindings = new Map<string, { scope: Cordis.Context; session: { getSnapshot(): { blank: boolean }; projections: { faceOf(): Store.SnapshotStore<any> } } }>();
+  const reloadSelection = async (id: string) => {
+    const { projection } = await (await fetch('/selection?sessionId=' + encodeURIComponent(id))).json();
+    bindings.get(id)?.session.projections.faceOf().set(projection);
+  };
   const bindingFor = (id: string) => {
     let binding = bindings.get(id);
     if (!binding) {
-      const projected = Store.createSnapshotStore({ lastUsed: null, next: { provider: 'fixture', model: 'capable' } });
+      const projected = Store.createSnapshotStore(undefined);
       binding = { scope: ctx.extend(), session: { getSnapshot: () => ({ blank: true }), projections: { faceOf: () => projected } } };
       bindings.set(id, binding);
+      void reloadSelection(id);
     }
     return binding;
   };
@@ -47,9 +52,13 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
       const response = await fetch('/catalog'), value = await response.json();
       return response.ok ? { ok: true, value } : { ok: false, error: value };
     },
-    selectModel: async ({ sessionId, ...selection }: { sessionId: string; provider: string; model: string }) => {
-      bindingFor(sessionId).session.projections.faceOf().set({ lastUsed: null, next: selection });
-      return { ok: true, value: undefined };
+    selectModel: async (selection: { sessionId: string; provider: string; model: string }) => {
+      const result = await (await fetch('/select', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(selection) })).json();
+      if (result.ok) {
+        bindingFor(selection.sessionId).session.projections.faceOf().set(result.projection);
+        publish('settings/document-updated');
+      }
+      return result;
     },
   };
   // Services are provided by a sibling plugin, as in the real desktop. Root-provided
@@ -81,7 +90,15 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
     fixtureCatalogMode: async (mode: string) => {
       await fetch('/catalog-mode', { method: 'POST', body: mode }); publish('settings/document-updated');
     },
-    fixtureResetConnection: () => ctx.emit('connection/reset'),
+    fixtureResetConnection: async () => {
+      ctx.emit('connection/reset');
+      await Promise.all([...bindings.keys()].map(reloadSelection));
+    },
+    fixturePrompt: async (sessionId: string) => {
+      const result = await (await fetch('/prompt', { method: 'POST' })).json();
+      bindingFor(sessionId).session.projections.faceOf().set(result.projection);
+      return result.requests;
+    },
   });
   Object.assign(window, { fixtureSlots: registrations, fixtureNativeClasses: native.__fixtureCSS });
   const locale = native.__fixtureLocales.zh as Record<string, string>;
@@ -100,12 +117,13 @@ export async function loadDesktop(form: SettingsForm, t: TranslateNS<'agentRoute
   };
   const session = { subagent: null, removed: false, running: false, promptError: null };
   const selectSession = (select: (state: typeof session) => unknown) => select(session);
-  const selection = { next: { provider: 'fixture', model: 'capable' } };
-  const useProjection = (key: string, select?: (value: unknown) => unknown) => {
-    const value = key === 'modelSelection' ? selection : undefined;
-    return select ? select(value) : value;
-  };
   function DesktopComposer({ sessionId }: { sessionId: string }) {
+    const useProjection = (key: string, select?: (value: unknown) => unknown) => {
+      const store = bindingFor(sessionId).session.projections.faceOf();
+      const projected = React.useSyncExternalStore(store.subscribe, store.getSnapshot);
+      const value = key === 'modelSelection' ? projected : undefined;
+      return select ? select(value) : value;
+    };
     return <InputBar sessionId={sessionId} variant="composer" useSession={selectSession} useProjection={useProjection}
       keyboard={{ editor: null, caretSpan: () => ({ start: 0, end: 0 }), submit: () => {}, bindFilePicker: () => () => {} }} inputActions={{}}
       useInput={(select: (value: unknown) => unknown) => select({ draft: '', phase: 'plain', attachmentIds: [] })}

@@ -54,10 +54,22 @@ export type Role = z.infer<typeof roleSchema>;
 export type ChatBinding = z.infer<typeof bindingSchema>;
 
 /** A selected chat pair supplies initial workers; role-specific checks and fallback remain configurable. */
-export function scopedSettings(config: Settings, sessionId: string): Settings | null {
+export function scopedSettings(config: Settings, sessionId: string, mainSelection?: Pick<Model, 'provider' | 'model'> & Partial<Pick<Model, 'reasoningEffort'>>): Settings | null {
   const binding = config.chatBindings.find(item => item.sessionId === sessionId);
   if (!binding) return null;
-  return { ...config, roles: config.roles.length
-    ? config.roles.map(role => ({ ...role, modelId: binding.workerModelId }))
-    : [{ name: 'worker', modelId: binding.workerModelId, fallbackModelId: binding.mainModelId === binding.workerModelId ? '' : binding.mainModelId, verifierModelId: '', toolAllow: [] }] };
+  if (config.roles.length) return { ...config, roles: config.roles.map(role => ({ ...role, modelId: binding.workerModelId })) };
+  let models = config.models, mainModelId = binding.mainModelId;
+  if (mainSelection) {
+    const existing = models.find(model => model.provider === mainSelection.provider && model.model === mainSelection.model);
+    if (existing) mainModelId = existing.id;
+    else {
+      // A native switch is usable before its price/preferences form is saved.
+      // The temporary fallback has unknown prices and never changes that form.
+      mainModelId = 'current-main';
+      for (let number = 2; models.some(model => model.id === mainModelId); number++) mainModelId = `current-main-${number}`;
+      models = [...models, modelSchema.parse({ id: mainModelId, ...mainSelection, maxTokens: config.maxOutputTokens })];
+    }
+  }
+  return { ...config, models, roles: [{ name: 'worker', modelId: binding.workerModelId,
+    fallbackModelId: mainModelId === binding.workerModelId ? '' : mainModelId, verifierModelId: '', toolAllow: [] }] };
 }

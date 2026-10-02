@@ -4,7 +4,7 @@ import { FixtureAdapter, textResponse } from './harness.ts';
 export class CatalogAdapter extends FixtureAdapter {
   extra = false;
   failExternal = false;
-  constructor() { super(() => textResponse('fixture')); }
+  constructor(script: ConstructorParameters<typeof FixtureAdapter>[0] = () => textResponse('fixture')) { super(script); }
   providerInfo(provider: string) { return { id: provider, name: provider === 'fixture' ? 'Fixture provider' : 'External API' }; }
   async listModels(provider: string) {
     if (provider === 'external' && this.failExternal) throw new Error('Fixture provider unavailable');
