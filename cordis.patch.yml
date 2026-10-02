@@ -1,0 +1,15 @@
+- insert:
+    - id: dsh-agent-router
+      name: dsh-agent-router
+      config:
+        subagentProvider: spawn
+        maxDepth: 1
+        maxParallel: 3
+        qualityRetries: 1
+        maxOutputTokens: 4096
+        historyLimit: 200
+        sessionBudget: 0
+        finalReviewReserve: 0
+        currency: USD
+        models: []
+        roles: []

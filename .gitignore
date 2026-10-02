@@ -1,0 +1,8 @@
+node_modules/
+.cache/
+.tools/
+.test-output/
+artifacts/
+*.tgz
+.env*
+!.env.example
